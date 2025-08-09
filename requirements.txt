@@ -1,0 +1,44 @@
+# Core Backend
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+requests
+
+# Google + Vector DB
+google-generativeai
+
+# Vector Store
+faiss-cpu
+
+# Document Processing  
+PyPDF2
+pypdf
+python-docx
+pytesseract
+Pillow
+
+# Additional Document Formats
+python-pptx
+openpyxl
+xlrd
+extract-msg
+eml-parser
+markdown
+beautifulsoup4
+lxml
+chardet
+
+# Enhanced NLP and ML
+nltk>=3.8
+scikit-learn>=1.3.0
+numpy>=1.24.0
+
+# Additional utilities
+dataclasses-json
+typing-extensions
+langdetect
+
+# Database
+psycopg2-binary
