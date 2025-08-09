@@ -94,7 +94,7 @@ class DocumentProcessor:
             # Always supported formats
             'pdf', 'docx', 'doc', 'odt', 'rtf',
             'txt', 'md', 'markdown', 'rst', 'log',
-            'html', 'htm', 'xml', 'csv',
+            'html', 'htm', 'aspx', 'xml', 'csv',
             'json', 'yaml', 'yml', 'ini', 'cfg', 'conf',
             'zip', 'eml'
         }
@@ -189,7 +189,7 @@ class DocumentProcessor:
                 return self._extract_msg_text(content_stream)
             
             # Web formats
-            elif file_ext in ['html', 'htm']:
+            elif file_ext in ['html', 'htm', 'aspx']:
                 return self._extract_html_text(content_stream)
             elif file_ext == 'xml':
                 return self._extract_xml_text(content_stream)
