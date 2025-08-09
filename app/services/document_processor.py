@@ -87,7 +87,7 @@ class DocumentProcessor:
     def __init__(self):
         self.min_chunk_size = 300  # Minimum words per chunk
         self.max_chunk_size = 600  # Maximum words per chunk
-        self.overlap_words = 50    # Word overlap between chunks
+        self.overlap_words = 35    # OPTIMIZED: Reduced overlap for faster processing
         
         # Supported file extensions (dynamic based on available packages)
         self.supported_extensions = {

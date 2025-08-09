@@ -28,7 +28,7 @@ class QAService:
         }
 
     async def answer_questions(self, request: HackRxRequest) -> list[str]:
-        """Improved Q&A process with better chunking and retrieval."""
+        """Optimized Q&A process with parallel processing and caching."""
         
         # 1. Process document with better chunking
         document_dict = {
@@ -43,31 +43,42 @@ class QAService:
 
         print(f"Processed {len(text_chunks)} chunks")
         
-        # 2. Create vector store with more chunks
+        # 2. Create vector store with batch embeddings
         vector_store = VectorStoreService(dimension=768)
         embeddings = await self.gemini_service.generate_embeddings_batch(text_chunks)
         vector_store.add_documents([{'text': chunk, 'embedding': emb} for chunk, emb in zip(text_chunks, embeddings)])
 
-        # 3. Answer questions with improved retrieval
-        answers = []
-        for i, question in enumerate(request.questions):
-            print(f"Processing question {i+1}: {question}")
-            answer = await self._answer_single_question_improved(question, vector_store)
-            answers.append(answer)
+        # 3. PARALLEL PROCESSING: Answer all questions simultaneously
+        print(f"Processing {len(request.questions)} questions in parallel...")
+        tasks = [
+            self._answer_single_question_improved(question, vector_store, i+1) 
+            for i, question in enumerate(request.questions)
+        ]
         
-        return answers
+        answers = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle any exceptions that occurred
+        processed_answers = []
+        for i, answer in enumerate(answers):
+            if isinstance(answer, Exception):
+                print(f"Error processing question {i+1}: {answer}")
+                processed_answers.append(f"Error processing question: {str(answer)}")
+            else:
+                processed_answers.append(answer)
+        
+        return processed_answers
 
-    async def _answer_single_question_improved(self, question: str, vector_store: VectorStoreService) -> str:
+    async def _answer_single_question_improved(self, question: str, vector_store: VectorStoreService, question_num: int = 1) -> str:
         """Hackathon-optimized question answering with multi-strategy retrieval."""
         
         # 1. Multi-strategy query expansion
         queries = self._generate_search_queries(question)
         
-        # 2. Retrieve chunks using multiple queries
+        # 2. OPTIMIZED: Retrieve fewer chunks for faster processing
         all_chunks = set()
         for query in queries:
             query_embedding = await self.gemini_service.generate_embeddings(query, task_type="retrieval_query")
-            search_results = vector_store.search(query_embedding, top_k=8)
+            search_results = vector_store.search(query_embedding, top_k=5)  # Reduced from 8 to 5
             
             for result in search_results:
                 all_chunks.add(result['text'])
@@ -75,9 +86,9 @@ class QAService:
         if not all_chunks:
             return "Information not found in the policy document."
         
-        # 3. Use more context chunks for better accuracy
-        relevant_chunks = list(all_chunks)[:12]  # Use up to 12 chunks
-        print(f"Using {len(relevant_chunks)} chunks for context")
+        # 3. OPTIMIZED: Use fewer context chunks for faster processing
+        relevant_chunks = list(all_chunks)[:8]  # Reduced from 12 to 8 chunks
+        print(f"Q{question_num}: Using {len(relevant_chunks)} chunks for context")
         
         # 4. Generate answer with enhanced prompt
         answer = await self._generate_precise_answer(question, relevant_chunks)

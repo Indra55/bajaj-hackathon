@@ -2,6 +2,8 @@ import google.generativeai as genai
 from ..core.config import settings
 import json
 import re
+import hashlib
+from typing import Dict, List
 
 class GeminiPolicyProcessor:
     def __init__(self):
@@ -10,6 +12,18 @@ class GeminiPolicyProcessor:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
         self.embedding_model = 'models/text-embedding-004'
+        
+        # OPTIMIZATION: Simple in-memory embedding cache with size limit
+        self._embedding_cache: Dict[str, List[float]] = {}
+        self._cache_max_size = 1000  # Limit cache to 1000 entries
+
+    def _manage_cache_size(self):
+        """Remove oldest entries if cache exceeds max size."""
+        if len(self._embedding_cache) > self._cache_max_size:
+            # Remove 20% of oldest entries (simple FIFO)
+            keys_to_remove = list(self._embedding_cache.keys())[:int(self._cache_max_size * 0.2)]
+            for key in keys_to_remove:
+                del self._embedding_cache[key]
 
     def _parse_json_response(self, text: str) -> dict:
         """Safely parse JSON from a string that might contain markdown."""
@@ -84,22 +98,70 @@ class GeminiPolicyProcessor:
         return self._parse_json_response(response.text)
     
     async def generate_embeddings(self, text: str, task_type="retrieval_document") -> list:
-        """Generate embeddings using Gemini's embedding capabilities"""
+        """Generate embeddings using Gemini's embedding capabilities with caching"""
+        # OPTIMIZATION: Check cache first
+        cache_key = hashlib.md5(f"{text}_{task_type}".encode()).hexdigest()
+        if cache_key in self._embedding_cache:
+            return self._embedding_cache[cache_key]
+            
         response = await genai.embed_content_async(
             model=self.embedding_model,
             content=text,
             task_type=task_type
         )
-        return response['embedding']
+        
+        # OPTIMIZATION: Cache the result
+        embedding = response['embedding']
+        self._embedding_cache[cache_key] = embedding
+        self._manage_cache_size()
+        return embedding
 
     async def generate_embeddings_batch(self, texts: list[str], task_type="retrieval_document") -> list:
-        """Generate embeddings for a batch of texts for improved efficiency."""
-        response = await genai.embed_content_async(
-            model=self.embedding_model,
-            content=texts,
-            task_type=task_type
-        )
-        return response['embedding']
+        """Generate embeddings for a batch of texts with caching."""
+        # OPTIMIZATION: Check cache for each text and only process uncached ones
+        cached_embeddings = []
+        uncached_texts = []
+        uncached_indices = []
+        
+        for i, text in enumerate(texts):
+            cache_key = hashlib.md5(f"{text}_{task_type}".encode()).hexdigest()
+            if cache_key in self._embedding_cache:
+                cached_embeddings.append((i, self._embedding_cache[cache_key]))
+            else:
+                uncached_texts.append(text)
+                uncached_indices.append(i)
+        
+        # Generate embeddings for uncached texts only
+        if uncached_texts:
+            response = await genai.embed_content_async(
+                model=self.embedding_model,
+                content=uncached_texts,
+                task_type=task_type
+            )
+            new_embeddings = response['embedding']
+            
+            # Cache new embeddings
+            for j, text in enumerate(uncached_texts):
+                cache_key = hashlib.md5(f"{text}_{task_type}".encode()).hexdigest()
+                self._embedding_cache[cache_key] = new_embeddings[j]
+            
+            # Manage cache size after batch caching
+            self._manage_cache_size()
+        else:
+            new_embeddings = []
+        
+        # Combine cached and new embeddings in correct order
+        all_embeddings = [None] * len(texts)
+        
+        # Place cached embeddings
+        for i, embedding in cached_embeddings:
+            all_embeddings[i] = embedding
+            
+        # Place new embeddings
+        for j, i in enumerate(uncached_indices):
+            all_embeddings[i] = new_embeddings[j]
+            
+        return all_embeddings
         
     async def final_decision_reasoning(self, query: dict, analyzed_clauses: list) -> dict:
         """Generate final decision with detailed reasoning"""
@@ -270,9 +332,9 @@ When information is unclear or contradictory:
             response = await self.model.generate_content_async(
                 prompt,
                 generation_config={
-                    "temperature": 0.1,  # Lower temperature for more consistent, precise answers
+                    "temperature": 0.0,  # OPTIMIZED: Zero temperature for fastest, most consistent responses
                     "top_p": 0.9,
-                    "max_output_tokens": 1024,  # Increased for detailed analysis
+                    "max_output_tokens": 512,  # OPTIMIZED: Reduced from 1024 to 512 for faster generation
                 }
             )
             
