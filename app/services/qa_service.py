@@ -145,11 +145,41 @@ class QAService:
         
         return list(set(queries))  # Remove duplicates
     
+    def _detect_language(self, text: str) -> str:
+        """Detect if the text contains non-Latin characters."""
+        # Simple check for Malayalam Unicode range
+        malayalam_range = '[ഀ-ൿ]'
+        if re.search(malayalam_range, text):
+            return 'malayalam'
+        return 'english'
+
     async def _generate_precise_answer(self, question: str, context_chunks: list[str]) -> str:
-        """Generate precise answer using enhanced prompting."""
+        """Generate precise answer using enhanced prompting with multilingual support."""
         
-        # Create enhanced prompt for better accuracy
-        enhanced_prompt = f"""
+        # Detect language of the question
+        lang = self._detect_language(question)
+        
+        # Create language-specific prompts
+        if lang == 'malayalam':
+            system_prompt = """
+നിങ്ങൾ ഒരു പ്രൊഫഷണലായ ഇൻഷുറൻസ് പോളിസി വിശകലനകാരനാണ്. താഴെയുള്ള ചോദ്യത്തിന് കൃത്യമായി ഉത്തരം നൽകുക. ഉത്തരം മലയാളത്തിലോ ഇംഗ്ലീഷിലോ നൽകാം, ചോദ്യത്തിന്റെ ഭാഷയെ ആശ്രയിച്ച്.
+
+പ്രധാന നിയമങ്ങൾ:
+1. പോളിസി വാചകത്തിൽ നിന്ന് കൃത്യമായ സംഖ്യകൾ, ശതമാനങ്ങൾ, സമയക്രമം എന്നിവ എടുക്കുക
+2. സാധ്യമെങ്കിൽ പ്രത്യേക പോളിസി ഭാഷ ഉദ്ധരിക്കുക
+3. കാത്തിരിക്കൽ കാലയളവ് ചോദിച്ചാൽ കൃത്യമായ കാലാവധി നൽകുക
+4. കവറേജ് സംബന്ധിച്ച ചോദ്യമാണെങ്കിൽ ആദ്യം അതെ/ഇല്ല എന്ന് വ്യക്തമായി പറയുക, പിന്നീട് വ്യവസ്ഥകൾ വിശദീകരിക്കുക
+5. ബന്ധപ്പെട്ട എല്ലാ വ്യവസ്ഥകളും പരിമിതികളും ഉൾപ്പെടുത്തുക
+6. പോളിസി ഡോക്യുമെന്റിലെ കൃത്യമായ പദാവലി ഉപയോഗിക്കുക
+
+ചോദ്യം: {question}
+
+പോളിസി സന്ദർഭം:
+{context}
+
+കൃത്യവും വസ്തുനിഷ്ഠവുമായ ഉത്തരം നൽകുക:"""
+        else:
+            system_prompt = """
 You are an expert insurance policy analyst. Answer the following question with MAXIMUM PRECISION using ONLY the provided policy context.
 
 IMPORTANT RULES:
@@ -163,9 +193,15 @@ IMPORTANT RULES:
 QUESTION: {question}
 
 POLICY CONTEXT:
-{chr(10).join([f"SECTION {i+1}: {chunk}" for i, chunk in enumerate(context_chunks)])}
+{context}
 
 PROVIDE A PRECISE, FACTUAL ANSWER:"""
+        
+        # Prepare context with section numbers
+        context = chr(10).join([f"SECTION {i+1}: {chunk}" for i, chunk in enumerate(context_chunks)])
+        
+        # Format the prompt with the appropriate language
+        enhanced_prompt = system_prompt.format(question=question, context=context)
         
         try:
             # Use the enhanced prompt with the Gemini service
@@ -174,7 +210,7 @@ PROVIDE A PRECISE, FACTUAL ANSWER:"""
                 generation_config={
                     "temperature": 0.1,  # Low temperature for precision
                     "top_p": 0.9,
-                    "max_output_tokens": 512,
+                    "max_output_tokens": 1024,  # Increased for multilingual support
                 }
             )
             
@@ -187,7 +223,8 @@ PROVIDE A PRECISE, FACTUAL ANSWER:"""
             
         except Exception as e:
             print(f"Error generating answer: {e}")
-            return "Error processing the question. Please try again."
+            lang_msg = "ചോദ്യം പ്രോസസ്സ് ചെയ്യുന്നതിൽ പിശക് സംഭവിച്ചു. ദയവായി വീണ്ടും ശ്രമിക്കുക." if lang == 'malayalam' else "Error processing the question. Please try again."
+            return lang_msg
     
     def _post_process_answer(self, answer: str, question: str) -> str:
         """Post-process answer for better formatting and accuracy."""
