@@ -16,11 +16,11 @@
       },
       {
         "question": "What was Apple's investment commitment and what was its objective?",
-        "answer": "Apple committed $600 billion to build semiconductor plants in the US to boost domestic production and reduce import dependence — the clause explicitly states both the dollar amount and the objective, so I extracted the numeric commitment and its stated goal directly from that sentence."
+        "answer": "Apple announced $600 billion to strengthen American domestic manufacturing and reduce foreign dependence."
       },
       {
         "question": "What impact will this new policy have on consumers and the global market?",
-        "answer": "The policy is expected to raise consumer prices and affect global trade relations — the text explicitly links higher costs with potential trade impacts, and combining those stated consequences yields the expected effects on consumers (higher prices) and on the global market (trade disruption/possible retaliation)."
+        "answer": "The policy will raise prices and lead to trade retaliation."
       }
     ]
   }
