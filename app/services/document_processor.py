@@ -115,10 +115,7 @@ class DocumentProcessor:
         metadata = document.get('metadata', {})
         filename = metadata.get('filename', '')
         
-        # Special handling for hackathon URL - return flight number instead of processing PDF
-        if content and isinstance(content, str) and "hackrx.blob.core.windows.net/hackrx/rounds/FinalRound4SubmissionPDF.pdf" in content:
-            # Return the flight number as a single chunk
-            return ["The flight number is 8bbd0e"]
+        # Special handling for specific document types can be added here
         
         # Check if this is a URL without extension
         is_url = content and isinstance(content, str) and content.startswith(('http://', 'https://'))

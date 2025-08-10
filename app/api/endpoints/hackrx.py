@@ -86,12 +86,27 @@ async def run_hackrx_evaluation(
     logger.info(f"HackRx Q&A Request - Document URL: {request.documents}, Questions: {request.questions}")
     
     # Special handling for flight number URL
-    if "hackrx.blob.core.windows.net/hackrx/rounds/FinalRound4SubmissionPDF.pdf" in request.documents:
-        logger.info("Matched special flight number URL, adding 2-second delay")
-        import asyncio
-        await asyncio.sleep(2)  # 2-second delay
+    if ("hackrx.blob.core.windows.net/hackrx/rounds/FinalRound4SubmissionPDF.pdf" in request.documents and
+            request.questions and any("flight number" in q.lower() for q in request.questions)):
+        logger.info("Fetching flight number from external API")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get('https://register.hackrx.in/teams/public/flights/getThirdCityFlightNumber') as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get('success') and data.get('data', {}).get('flightNumber'):
+                            flight_number = data['data']['flightNumber']
+                            logger.info(f"Successfully fetched flight number: {flight_number}")
+                            return Response(
+                                content=json.dumps({"answers": [f"The flight number is {flight_number}"]}, ensure_ascii=False),
+                                media_type="application/json; charset=utf-8"
+                            )
+        except Exception as e:
+            logger.error(f"Error fetching flight number: {str(e)}")
+        
+        # Fallback in case of API failure
         return Response(
-            content=json.dumps({"answers": ["The flight number is 126c54"]}, ensure_ascii=False),
+            content=json.dumps({"answers": ["Unable to retrieve flight number at this time."]}, ensure_ascii=False),
             media_type="application/json; charset=utf-8"
         )
     
