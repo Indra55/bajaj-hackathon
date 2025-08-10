@@ -1,4 +1,4 @@
-# ⚡ PolicyEval-GPT & Domain-Aware Q&A API 🚀
+# ⚡ UniRAG by Singularity 🚀
 
 > AI-powered, ultra-fast, domain-aware document Q&A with precision answers and production-ready APIs.
 
