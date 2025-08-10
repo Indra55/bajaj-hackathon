@@ -51,7 +51,7 @@
 
 ## 📘 About
 
-PolicyEval-GPT is a FastAPI-based service that answers questions about documents with high precision. It intelligently detects document type and domain, routes queries to the right analysis pipeline, and uses FAISS vector search with Gemini embeddings to deliver concise, accurate answers. Optimized for both small and large documents, and built for real-world production use.
+UniRAG is a FastAPI-based service that answers questions about documents with high precision. It intelligently detects document type and domain, routes queries to the right analysis pipeline, and uses FAISS vector search with Gemini embeddings to deliver concise, accurate answers. Optimized for both small and large documents, and built for real-world production use.
 
 ---
 
@@ -71,13 +71,13 @@ PolicyEval-GPT is a FastAPI-based service that answers questions about documents
 
 ## 🧰 Tech Stack
 
-- Backend: FastAPI, Uvicorn
-- LLM: Google Gemini 2.5 Flash Lite (Generative + Embeddings `text-embedding-004`)
-- Retrieval: FAISS (cosine similarity)
-- Parsing: PyPDF2/pypdf, python-docx, python-pptx, openpyxl/xlrd, BeautifulSoup, lxml, markdown, chardet, eml-parser, extract-msg
-- Data: numpy, scikit-learn, nltk
-- Config: pydantic-settings, python-dotenv
-- Deploy: Render (render.yaml), Procfile compatible
+- **Backend**: FastAPI, Uvicorn
+- **LLM**: Google Gemini 2.5 Flash Lite (Generative + Embeddings `text-embedding-004`)
+- **Retrieval**: FAISS (cosine similarity)
+- **Parsing**: PyPDF2/pypdf, python-docx, python-pptx, openpyxl/xlrd, BeautifulSoup, lxml, markdown, chardet, eml-parser, extract-msg
+- **Data**: numpy, scikit-learn, nltk
+- **Config**: pydantic-settings, python-dotenv
+- **Deploy**: Render (render.yaml), Procfile compatible
 
 ---
 
@@ -92,12 +92,12 @@ flowchart TD
     A --> R4[/domain-qa/domain-info/]
     A --> R5[/domain-qa/classify-document/]
 
-    subgraph Core Services
-      D[DocumentProcessor<br/>(multiformat extract + chunking)]
-      G[GeminiPolicyProcessor<br/>(LLM + Embeddings + Cache)]
-      V[VectorStoreService<br/>(FAISS)]
-      Q[QAService<br/>(Parallel QA + Small-Doc Direct Mode)]
-      DA[DomainAwareQAService<br/>(Routing + Stats)]
+    subgraph CoreServices["Core Services"]
+      D["DocumentProcessor<br/>(multiformat extract + chunking)"]
+      G["GeminiPolicyProcessor<br/>(LLM + Embeddings + Cache)"]
+      V["VectorStoreService<br/>(FAISS)"]
+      Q["QAService<br/>(Parallel QA + Small-Doc Direct Mode)"]
+      DA["DomainAwareQAService<br/>(Routing + Stats)"]
     end
 
     R1 --> Q
@@ -142,7 +142,7 @@ GEMINI_API_KEY=your_gemini_api_key
 HACKRX_API_KEY=your_server_api_key  # used to protect endpoints
 ```
 
-Notes:
+**Notes:**
 - `GEMINI_API_KEY` is required to start the server.
 - `HACKRX_API_KEY` is validated from the `Authorization: Bearer <token>` header.
 
@@ -158,8 +158,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 # web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-- Open Swagger UI: http://localhost:8000/docs
-- Open ReDoc: http://localhost:8000/redoc
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
 
 ---
 
@@ -178,7 +178,7 @@ Navigate to `http://localhost:8000/docs` for interactive testing.
 
 ### HackRx Q&A
 
-Endpoint: `POST /hackrx/run`
+**Endpoint**: `POST /hackrx/run`
 
 ```bash
 curl -X POST "http://localhost:8000/hackrx/run" \
@@ -195,7 +195,7 @@ curl -X POST "http://localhost:8000/hackrx/run" \
 
 ### Domain-Aware Q&A
 
-Endpoint: `POST /domain-qa/domain-aware-qa`
+**Endpoint**: `POST /domain-qa/domain-aware-qa`
 
 ```bash
 curl -X POST "http://localhost:8000/domain-qa/domain-aware-qa" \
@@ -210,7 +210,7 @@ curl -X POST "http://localhost:8000/domain-qa/domain-aware-qa" \
 
 ### Multi-Document Q&A
 
-Endpoint: `POST /domain-qa/multi-document-qa`
+**Endpoint**: `POST /domain-qa/multi-document-qa`
 
 ```bash
 curl -X POST "http://localhost:8000/domain-qa/multi-document-qa" \
@@ -269,11 +269,10 @@ r = requests.post(f"{API}/hackrx/run", headers=HEADERS, json=payload)
 print(r.json())
 ```
 
-Color-themed JSON (Nord-ish):
+Example JSON request:
 
-```jsonc
+```json
 {
-  // request
   "documents": "https://example.com/policy.pdf",
   "questions": ["What is the grace period?", "Is maternity covered?"]
 }
@@ -281,26 +280,12 @@ Color-themed JSON (Nord-ish):
 
 ---
 
-## 📜 License
-
-This project is provided under a Custom/Proprietary license for hackathon/demo purposes. Please contact the maintainers for production licensing terms.
-
----
-
-## ⭐ Call to Action
-
-If you find this project useful or inspiring, please consider giving it a star. It helps others discover it and motivates further development!
-
-➡️ "Star" this repo now and stay tuned for updates! ⭐
-
----
-
 ## 🐳 Docker
 
 This project includes production and development Docker setups.
 
-Prerequisites:
-- Create a `.env` file in the project root with the following at minimum:
+**Prerequisites:**
+Create a `.env` file in the project root with the following at minimum:
 
 ```bash
 GEMINI_API_KEY=your_gemini_api_key
@@ -336,10 +321,24 @@ docker compose up --build api
 docker compose up --build api-dev
 ```
 
-URLs:
+**URLs:**
 - Prod-like: http://localhost:8000/docs
 - Dev: http://localhost:8001/docs
 
-Notes:
+**Notes:**
 - The server requires `GEMINI_API_KEY` at start; without it the app will fail fast.
 - OCR (pytesseract) and various document parsers are available in the image.
+
+---
+
+## 📜 License
+
+This project is provided under a Custom/Proprietary license for hackathon/demo purposes. Please contact the maintainers for production licensing terms.
+
+---
+
+## ⭐ Call to Action
+
+If you find this project useful or inspiring, please consider giving it a star. It helps others discover it and motivates further development!
+
+➡️ **Star this repo now and stay tuned for updates!** ⭐
