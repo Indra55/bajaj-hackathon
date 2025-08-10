@@ -93,11 +93,11 @@ flowchart TD
     A --> R5[/domain-qa/classify-document/]
 
     subgraph Core Services
-      D[DocumentProcessor\n(multiformat extract + chunking)]
-      G[GeminiPolicyProcessor\n(LLM + Embeddings + Cache)]
-      V[VectorStoreService\n(FAISS)]
-      Q[QAService\n(Parallel QA + Small-Doc Direct Mode)]
-      DA[DomainAwareQAService\n(Routing + Stats)]
+      D[DocumentProcessor<br/>(multiformat extract + chunking)]
+      G[GeminiPolicyProcessor<br/>(LLM + Embeddings + Cache)]
+      V[VectorStoreService<br/>(FAISS)]
+      Q[QAService<br/>(Parallel QA + Small-Doc Direct Mode)]
+      DA[DomainAwareQAService<br/>(Routing + Stats)]
     end
 
     R1 --> Q
