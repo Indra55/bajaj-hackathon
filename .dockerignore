@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+
+# Environments
+.env
+.env.*
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Node (just in case)
+node_modules/
+
+# Build cache
+pip-wheel-metadata/
+.eggs/
+*.egg-info/
+.dist/
+dist/
+build/
