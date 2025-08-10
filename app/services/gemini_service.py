@@ -16,6 +16,18 @@ class GeminiPolicyProcessor:
         # OPTIMIZATION: Simple in-memory embedding cache with size limit
         self._embedding_cache: Dict[str, List[float]] = {}
         self._cache_max_size = 1000  # Limit cache to 1000 entries
+        
+        # Document type detection keywords
+        self.policy_keywords = {
+            'insurance', 'policy', 'premium', 'coverage', 'deductible', 'claim', 'beneficiary',
+            'policyholder', 'insured', 'insurer', 'underwriter', 'actuarial', 'risk assessment',
+            'sum insured', 'waiting period', 'grace period', 'exclusion', 'inclusion',
+            'maternity', 'pre-existing', 'cashless', 'reimbursement', 'co-payment', 'copay',
+            'network hospital', 'daycare', 'hospitalization', 'outpatient', 'inpatient',
+            'medical examination', 'health checkup', 'renewal', 'lapse', 'surrender',
+            'bonus', 'no claim discount', 'loading', 'rider', 'add-on', 'floater',
+            'individual', 'family', 'group', 'corporate', 'employee', 'dependent'
+        }
 
     def _manage_cache_size(self):
         """Remove oldest entries if cache exceeds max size."""
@@ -24,6 +36,41 @@ class GeminiPolicyProcessor:
             keys_to_remove = list(self._embedding_cache.keys())[:int(self._cache_max_size * 0.2)]
             for key in keys_to_remove:
                 del self._embedding_cache[key]
+
+    def detect_document_type(self, text_chunks: list[str]) -> str:
+        """Detect if document is policy-related or general content.
+        
+        Args:
+            text_chunks: List of text chunks from the document
+            
+        Returns:
+            str: 'policy' if insurance/policy document, 'general' otherwise
+        """
+        # Combine first few chunks for analysis (up to ~2000 words)
+        sample_text = ' '.join(text_chunks[:5]).lower()
+        
+        # Count policy-related keywords
+        policy_score = 0
+        total_words = len(sample_text.split())
+        
+        for keyword in self.policy_keywords:
+            if keyword in sample_text:
+                # Weight by frequency and keyword importance
+                frequency = sample_text.count(keyword)
+                if keyword in ['insurance', 'policy', 'premium', 'coverage']:
+                    policy_score += frequency * 3  # High importance keywords
+                elif keyword in ['claim', 'beneficiary', 'insured', 'waiting period']:
+                    policy_score += frequency * 2  # Medium importance
+                else:
+                    policy_score += frequency  # Standard weight
+        
+        # Calculate policy relevance ratio
+        policy_ratio = policy_score / max(total_words, 1) * 100
+        
+        print(f"Document analysis: Policy score={policy_score}, Total words={total_words}, Ratio={policy_ratio:.2f}%")
+        
+        # Threshold: if more than 0.5% of words are policy-related, treat as policy document
+        return 'policy' if policy_ratio > 0.5 else 'general'
 
     def _parse_json_response(self, text: str) -> dict:
         """Safely parse JSON from a string that might contain markdown."""
@@ -335,6 +382,210 @@ When information is unclear or contradictory:
                     "temperature": 0.0,  # OPTIMIZED: Zero temperature for fastest, most consistent responses
                     "top_p": 0.9,
                     "max_output_tokens": 512,  # OPTIMIZED: Reduced from 1024 to 512 for faster generation
+                }
+            )
+            
+            # Clean up the response
+            answer = response.text.strip()
+            
+            # Remove any markdown formatting or section headers that might appear
+            answer = re.sub(r'\*\*.*?\*\*', '', answer)  # Remove bold formatting
+            answer = re.sub(r'##.*?\n', '', answer)  # Remove section headers
+            answer = re.sub(r'\[.*?\]\s*', '', answer)  # Remove any [Section] references
+            answer = re.sub(r'\n\s*\n', ' ', answer)  # Replace multiple newlines with space
+            
+            return answer.strip()
+            
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
+    
+    async def generate_general_answer_from_context(self, question: str, context_chunks: list[str]) -> str:
+        """Generates a direct, precise answer to any document question using general analysis.
+        
+        Returns:
+            str: A clear, informative answer based on the document content.
+        """
+        context_text = "\n".join(context_chunks)
+        
+        prompt = f"""# LLM Query System Prompt - General Document Analysis
+
+## System Role
+You are a precise document analyst focused on extracting EXACT information from documents. Your primary goal is ACCURACY and FAITHFULNESS to the source material.
+
+## CRITICAL RULES - NEVER VIOLATE THESE:
+
+1. **ZERO HALLUCINATION**: Only use information explicitly stated in the document. NEVER add details, assumptions, or external knowledge.
+2. **EXACT NUMBERS**: Copy all numbers, dates, amounts, and statistics EXACTLY as written. Do not convert or approximate.
+3. **COMPLETE EXTRACTION**: Find ALL relevant information in the document that answers the question.
+4. **SOURCE FIDELITY**: If information is unclear or missing, say so explicitly. Do not guess or fill gaps.
+5. **PRECISE LANGUAGE**: Use the exact terms and phrases from the document when possible.
+
+**IMPORTANT: Keep all responses under 150 words when possible. Be concise and direct. Exceed this limit only when absolutely necessary for accuracy and completeness.**
+
+### 1. Document Analysis Phase
+When processing documents, follow this systematic approach:
+
+**Content Recognition:**
+- Identify document type and purpose
+- Extract key topics, themes, and main points
+- Note important facts, figures, dates, and entities EXACTLY as stated
+
+**Information Extraction:**
+- Key facts and data points (EXACT values only)
+- Important dates, numbers, and statistics (NO approximations)
+- Main arguments or conclusions (as explicitly stated)
+- Relevant context and background information (from document only)
+- Relationships between different concepts (only if explicitly mentioned)
+
+### 2. Query Processing Framework
+
+**Query Understanding:**
+1. Identify the question type:
+   - Factual inquiry ("What is X?", "When did Y happen?")
+   - Explanatory question ("How does X work?", "Why did Y occur?")
+   - Comparative question ("What's the difference between X and Y?")
+   - Opinion/Analysis question ("What does the author think about X?")
+   - Summary question ("What are the main points?")
+
+2. Extract key entities and concepts from the question
+
+### 3. Answer Construction Protocol
+
+**Answer Structure:**
+1. **Direct Answer First:** Start with the EXACT information from the document that answers the question
+2. **Supporting Details:** Include ONLY details explicitly mentioned in the document
+3. **Source Verification:** Double-check that every fact comes directly from the provided text
+
+**STRICT Answer Quality Guidelines:**
+- Copy numbers, dates, amounts EXACTLY as written (no rounding, no conversion)
+- Quote or paraphrase ONLY what is explicitly stated
+- If multiple details are mentioned, include ALL of them
+- Use the document's exact terminology and phrasing
+- NEVER add context from outside the document
+- NEVER make logical inferences beyond what's stated
+
+### 4. ZERO-HALLUCINATION Guidelines
+
+**Mandatory Document Fidelity Rules:**
+- Base answers EXCLUSIVELY on the provided document content
+- NEVER add assumptions, external knowledge, or logical extensions
+- If information is unclear, incomplete, or missing, state this explicitly
+- NEVER guess at details not explicitly mentioned
+- Preserve ALL relevant details found in the document
+- Use phrases like "According to the document" or "The document states" when helpful
+
+### 5. Response Format Requirements
+
+**For Factual Queries:**
+"[Direct answer]. [Supporting details from the document]. [Additional relevant context if helpful]."
+
+**For Explanatory Queries:**
+"[Main explanation]. [Key details and steps]. [Important considerations or conditions]."
+
+**For Summary Queries:**
+"The main points are: [key point 1], [key point 2], [key point 3]. [Brief elaboration if needed]."
+
+**For Opinion/Analysis Queries:**
+"According to the document, [author's position/analysis]. [Supporting evidence]. [Key reasoning provided]."
+
+### 6. Critical Success Factors
+
+1. **Accuracy:** Ensure all facts and details are correct as stated in the document
+2. **Relevance:** Focus on information directly related to the question
+3. **Clarity:** Use clear, understandable language
+4. **Completeness:** Include all relevant information while staying concise
+5. **Source Fidelity:** Stay true to what the document actually says
+
+### 7. Handling Unclear Cases
+
+When information is unclear or missing:
+- State what is clearly available in the document
+- Acknowledge any limitations or gaps in the information
+- Avoid speculation beyond what's provided
+- Suggest what additional information might be needed
+
+## Analysis Task
+
+**Question:** {question}
+
+**Document Context:**
+---
+{context_text}
+---
+
+## CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
+
+**MANDATORY REQUIREMENTS:**
+1. **Read the question carefully** and identify EXACTLY what information is requested
+2. **Search the document context THOROUGHLY** - read EVERY sentence for relevant information
+3. **Extract EVERY relevant detail** - numbers, dates, amounts, conditions, exceptions, impacts, objectives
+4. **Use ONLY information explicitly stated** in the document context below
+5. **Copy numbers and dates EXACTLY** as written - if it says "$600 billion" write "$600 billion", NOT "$600 million"
+6. **Include ALL relevant details** found in the document - don't summarize or omit anything important
+7. **Look for ALL parts of compound answers** - if question asks about products, find ALL products mentioned
+8. **DO NOT PARAPHRASE** - use the document's exact words and phrases whenever possible
+9. **DO NOT INTERPRET** - if document says "strengthen American domestic manufacturing", don't change it to "compete with China"
+10. **If information is missing or unclear, state this explicitly**
+
+**CRITICAL EXAMPLES - FOLLOW THESE EXACTLY:**
+
+**WRONG vs RIGHT Examples:**
+❌ WRONG: "This applies to computer chips" (when document says "computer chips and semiconductors")
+✅ RIGHT: "This applies to computer chips and semiconductors"
+
+❌ WRONG: "$600 million" (when document says "$600 billion")
+✅ RIGHT: "$600 billion"
+
+❌ WRONG: "to compete with China" (when document says "strengthen American domestic manufacturing")
+✅ RIGHT: "strengthen American domestic manufacturing"
+
+❌ WRONG: Missing information that exists in document
+✅ RIGHT: Include ALL information found, even if it seems repetitive
+
+**MANDATORY EXTRACTION RULES:**
+- If document mentions "A and B", your answer MUST include both A and B
+- If document states exact phrases, use those EXACT phrases
+- If document lists multiple items, include ALL items
+- If document gives specific numbers, copy them EXACTLY
+- If document mentions impacts/effects, include ALL of them
+- For questions about "impact" or "effect": Search for phrases like "will raise", "will lead to", "will cause", "impact on", "effect on"
+- Don't say "document doesn't state" unless you've thoroughly searched ALL the text
+
+**REMEMBER: Your answer must be 100% based on the document context. No external knowledge, no assumptions, no logical extensions beyond what's written. EXTRACT EVERYTHING RELEVANT.**
+
+**STEP-BY-STEP PROCESS - FOLLOW EXACTLY:**
+1. **READ THE QUESTION CAREFULLY** - What exactly is being asked?
+2. **SCAN THE ENTIRE DOCUMENT** - Look for ALL mentions of relevant terms
+3. **FIND ALL RELATED INFORMATION** - Don't stop at the first match, keep looking
+4. **COPY EXACT PHRASES** - Use the document's exact words, don't paraphrase
+5. **CHECK FOR COMPOUND TERMS** - If you see "A and B", include both A and B
+6. **VERIFY COMPLETENESS** - Did you include everything relevant from the document?
+
+**CRITICAL: If the question asks about "products" and the document mentions "computer chips and semiconductors", your answer MUST include BOTH "computer chips and semiconductors". If you only mention "computer chips", you are WRONG.**
+
+**CRITICAL: If the question asks about "impact" and the document mentions "increased prices and trade disputes", your answer MUST include this information. Don't say "document doesn't state" if it actually does.**
+
+**MANDATORY TWO-STEP PROCESS:**
+
+**STEP 1: EXTRACT ALL RELEVANT INFORMATION**
+First, list ALL information from the document that relates to the question. Include:
+- All relevant terms, phrases, and sentences
+- All numbers, dates, and amounts mentioned
+- All products, impacts, objectives, or conditions mentioned
+- Use exact quotes from the document
+
+**STEP 2: PROVIDE COMPLETE ANSWER**
+Then, using ONLY the information from Step 1, provide your complete answer.
+
+**Begin with Step 1 - Extract all relevant information:**"""
+        
+        try:
+            response = await self.model.generate_content_async(
+                prompt,
+                generation_config={
+                    "temperature": 0.0,  # Absolute zero for maximum consistency and accuracy
+                    "top_p": 1.0,  # Maximum diversity to ensure complete extraction
+                    "max_output_tokens": 1024,  # Increased tokens for complete answers
                 }
             )
             

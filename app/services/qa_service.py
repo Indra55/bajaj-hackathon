@@ -12,8 +12,8 @@ class QAService:
         self.document_processor = DocumentProcessor()
         self.gemini_service = GeminiPolicyProcessor()
         
-        # Insurance-specific query expansion for better retrieval
-        self.query_expansions = {
+        # Policy-specific query expansion for better retrieval (only used for policy documents)
+        self.policy_query_expansions = {
             'grace period': ['grace period', 'premium payment', 'payment due date', 'renewal period'],
             'waiting period': ['waiting period', 'elimination period', 'qualifying period', 'coverage starts'],
             'pre-existing': ['pre-existing', 'preexisting', 'prior condition', 'existing disease', 'PED'],
@@ -43,17 +43,36 @@ class QAService:
 
         print(f"Processed {len(text_chunks)} chunks")
         
-        # 2. Create vector store with batch embeddings
-        vector_store = VectorStoreService(dimension=768)
-        embeddings = await self.gemini_service.generate_embeddings_batch(text_chunks)
-        vector_store.add_documents([{'text': chunk, 'embedding': emb} for chunk, emb in zip(text_chunks, embeddings)])
+        # 2. SMART DOCUMENT TYPE DETECTION
+        document_type = self.gemini_service.detect_document_type(text_chunks)
+        print(f"Document type detected: {document_type}")
+        
+        # 3. SMART DOCUMENT SIZE DETECTION - Skip chunking for small documents
+        full_text = ' '.join(text_chunks)
+        word_count = len(full_text.split())
+        
+        print(f"Document size: {word_count} words")
+        
+        if word_count <= 2000 or len(text_chunks) <= 3:  # Small document threshold
+            print("SMALL DOCUMENT DETECTED: Using direct processing (no vector search)")
+            # For small documents, use direct processing without chunking
+            tasks = [
+                self._answer_question_direct(question, full_text, i+1, document_type)
+                for i, question in enumerate(request.questions)
+            ]
+        else:
+            print("LARGE DOCUMENT: Using vector search with chunking")
+            # 4. Create vector store with batch embeddings for large documents
+            vector_store = VectorStoreService(dimension=768)
+            embeddings = await self.gemini_service.generate_embeddings_batch(text_chunks)
+            vector_store.add_documents([{'text': chunk, 'embedding': emb} for chunk, emb in zip(text_chunks, embeddings)])
 
-        # 3. PARALLEL PROCESSING: Answer all questions simultaneously
-        print(f"Processing {len(request.questions)} questions in parallel...")
-        tasks = [
-            self._answer_single_question_improved(question, vector_store, i+1) 
-            for i, question in enumerate(request.questions)
-        ]
+            # 5. PARALLEL PROCESSING: Answer all questions simultaneously with appropriate analysis
+            print(f"Processing {len(request.questions)} questions in parallel using {document_type} analysis...")
+            tasks = [
+                self._answer_single_question_improved(question, vector_store, i+1, document_type) 
+                for i, question in enumerate(request.questions)
+            ]
         
         answers = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -68,30 +87,113 @@ class QAService:
         
         return processed_answers
 
-    async def _answer_single_question_improved(self, question: str, vector_store: VectorStoreService, question_num: int = 1) -> str:
-        """Hackathon-optimized question answering with multi-strategy retrieval."""
+    async def _answer_question_direct(self, question: str, full_document_text: str, question_num: int = 1, document_type: str = 'policy') -> str:
+        """Direct question answering for small documents without chunking or vector search.
         
-        # 1. Multi-strategy query expansion
-        queries = self._generate_search_queries(question)
+        This method provides the complete document as context, ensuring no information is lost
+        due to chunking or vector search limitations.
+        """
+        print(f"Q{question_num}: Using direct processing with full document context ({document_type} analysis)")
+        print(f"Q{question_num}: Document length: {len(full_document_text)} characters")
+        print(f"Q{question_num}: Question: {question}")
         
-        # 2. OPTIMIZED: Retrieve fewer chunks for faster processing
+        # Debug: Show first 500 characters of document to verify content
+        print(f"Q{question_num}: Document preview: {full_document_text[:500]}...")
+        
+        # Use appropriate analysis method based on document type
+        if document_type == 'policy':
+            answer = await self.gemini_service.generate_answer_from_context(question, [full_document_text])
+        else:
+            answer = await self.gemini_service.generate_general_answer_from_context(question, [full_document_text])
+        
+        print(f"Q{question_num}: Generated answer: {answer}")
+        return answer
+
+    async def _answer_single_question_improved(self, question: str, vector_store: VectorStoreService, question_num: int = 1, document_type: str = 'policy') -> str:
+        """Hackathon-optimized question answering with multi-strategy retrieval and smart document type routing."""
+        
+        # 1. Multi-strategy query expansion based on document type
+        if document_type == 'policy':
+            queries = self._generate_search_queries(question)
+        else:
+            # For general documents, use enhanced query strategy to ensure completeness
+            queries = [question, question.lower()]
+            
+            # Add key term variations for better retrieval
+            question_words = question.lower().split()
+            for word in question_words:
+                if len(word) > 3:  # Skip short words
+                    queries.append(word)
+            
+            # Add specific search patterns for common question types
+            if any(word in question.lower() for word in ['what', 'which', 'how much', 'when']):
+                # Extract key nouns and concepts
+                key_terms = []
+                for word in question_words:
+                    if word not in ['what', 'which', 'how', 'much', 'when', 'where', 'why', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but']:
+                        key_terms.append(word)
+                
+                # Add combinations of key terms
+                if len(key_terms) >= 2:
+                    queries.append(' '.join(key_terms[:2]))
+                if len(key_terms) >= 3:
+                    queries.append(' '.join(key_terms[:3]))
+        
+        # 2. Retrieve chunks based on document type for optimal accuracy
         all_chunks = set()
+        
+        # Adjust search parameters based on document type
+        if document_type == 'policy':
+            top_k_per_query = 5  # Optimized for policy documents
+            max_chunks = 8
+        else:
+            top_k_per_query = 10  # Maximum chunks per query for general documents to ensure completeness
+            max_chunks = 15  # Maximum context for complex general documents to capture all details
+        
         for query in queries:
             query_embedding = await self.gemini_service.generate_embeddings(query, task_type="retrieval_query")
-            search_results = vector_store.search(query_embedding, top_k=5)  # Reduced from 8 to 5
+            search_results = vector_store.search(query_embedding, top_k=top_k_per_query)
             
             for result in search_results:
                 all_chunks.add(result['text'])
         
+        # For general documents, add additional broad search to ensure completeness
+        if document_type == 'general':
+            # Add a very broad search to catch any missed relevant chunks
+            broad_queries = []
+            
+            # Extract all meaningful words from the question
+            question_words = [word.lower().strip('.,!?;:') for word in question.split() 
+                            if len(word) > 2 and word.lower() not in ['the', 'and', 'are', 'was', 'were', 'will', 'what', 'when', 'where', 'how', 'why', 'which', 'this', 'that', 'these', 'those']]
+            
+            # Search for individual important terms
+            for word in question_words[:5]:  # Limit to top 5 words to avoid too many queries
+                broad_queries.append(word)
+            
+            # Perform broad searches
+            for broad_query in broad_queries:
+                try:
+                    broad_embedding = await self.gemini_service.generate_embeddings(broad_query, task_type="retrieval_query")
+                    broad_results = vector_store.search(broad_embedding, top_k=5)
+                    for result in broad_results:
+                        all_chunks.add(result['text'])
+                except Exception as e:
+                    print(f"Broad search failed for '{broad_query}': {e}")
+                    continue
+        
         if not all_chunks:
-            return "Information not found in the policy document."
+            document_context = "document" if document_type == 'general' else "policy document"
+            return f"Information not found in the {document_context}."
         
-        # 3. OPTIMIZED: Use fewer context chunks for faster processing
-        relevant_chunks = list(all_chunks)[:8]  # Reduced from 12 to 8 chunks
-        print(f"Q{question_num}: Using {len(relevant_chunks)} chunks for context")
+        # 3. Use appropriate number of context chunks based on document type
+        relevant_chunks = list(all_chunks)[:max_chunks]
+        print(f"Q{question_num}: Using {len(relevant_chunks)} chunks for context ({document_type} analysis)")
         
-        # 4. Generate answer with enhanced prompt
-        answer = await self._generate_precise_answer(question, relevant_chunks)
+        # 4. Generate answer with appropriate analysis method
+        if document_type == 'policy':
+            answer = await self.gemini_service.generate_answer_from_context(question, relevant_chunks)
+        else:
+            answer = await self.gemini_service.generate_general_answer_from_context(question, relevant_chunks)
         
         return answer
     
@@ -101,7 +203,7 @@ class QAService:
         question_lower = question.lower()
         
         # Add expanded queries based on key terms
-        for key_term, expansions in self.query_expansions.items():
+        for key_term, expansions in self.policy_query_expansions.items():
             if key_term in question_lower:
                 for expansion in expansions:
                     # Create variations

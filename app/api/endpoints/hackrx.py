@@ -8,7 +8,6 @@ from urllib.parse import urlparse, parse_qs, urlunparse
 from app.api.schemas.evaluation import HackRxRequest, HackRxResponse
 from app.core.security import get_api_key
 from app.services.qa_service import QAService
-from app.services.qa_matcher import QAMatcher
 from app.core.exceptions import UnsupportedFileTypeError, DocumentProcessingError
 import logging
 
@@ -19,11 +18,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize services
 qa_service = QAService()
-
-# Initialize QA Matcher with the path to qa_data.json in the project root
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-qa_data_path = os.path.join(project_root, 'qa_data.json')
-qa_matcher = QAMatcher(qa_data_path)
 
 def extract_hack_team_from_url(url: str) -> str:
     """Extract hack_team from the URL if it matches the token endpoint pattern."""
@@ -124,44 +118,11 @@ async def run_hackrx_evaluation(
             media_type="application/json; charset=utf-8"
         )
     
-    # Check if we have predefined answers for this document
-    normalized_url = normalize_url(request.documents)
-    has_predefined_answers = False
-    
     try:
-        # Try to get answers from the QA Matcher first
-        answers = await qa_matcher.get_answers(request.documents, request.questions)
-        
-        # If we got all answers, return them
-        if all(answers):
-            logger.info(f"Using predefined answers for document: {request.documents}")
-            return Response(
-                content=json.dumps({"answers": answers}, ensure_ascii=False),
-                media_type="application/json; charset=utf-8"
-            )
-        
-        # If we're here, we don't have predefined answers for all questions
-        # Fall back to the regular Q&A service
-        logger.info(f"No predefined answers found for all questions, falling back to QAService")
+        # Process all requests through the RAG bot
+        logger.info(f"Processing request through RAG bot for document: {request.documents}")
         answers = await qa_service.answer_questions(request)
         return HackRxResponse(answers=answers)
-        
-    except Exception as e:
-        logger.error(f"Error processing Q&A request: {str(e)}", exc_info=True)
-        # If there's an error with the QA Matcher, fall back to the regular Q&A service
-        try:
-            logger.info("Error with QA Matcher, falling back to QAService")
-            answers = await qa_service.answer_questions(request)
-            return Response(
-                content=json.dumps({"answers": answers}, ensure_ascii=False),
-                media_type="application/json; charset=utf-8"
-            )
-        except Exception as inner_e:
-            logger.error(f"Error in fallback QAService: {str(inner_e)}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to process document and questions: {str(inner_e)}"
-            )
     
     except UnsupportedFileTypeError as e:
         # Handle unsupported file types gracefully

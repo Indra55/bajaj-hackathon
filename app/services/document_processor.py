@@ -370,7 +370,7 @@ class DocumentProcessor:
             
             # Try with PyPDF2 first
             try:
-                pdf_reader = PyPDF2.PdfReader(content_stream)
+                pdf_reader = PdfReader(content_stream)
                 text_parts = []
                 
                 for page in pdf_reader.pages:
