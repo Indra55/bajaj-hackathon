@@ -5,6 +5,7 @@ pydantic
 pydantic-settings
 python-dotenv
 requests
+aiohttp
 
 # Google + Vector DB
 google-generativeai
